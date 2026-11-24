@@ -9,7 +9,7 @@ import steam
 from core import Manager
 
 APP_NAME = "Mauser"
-APP_VERSION = "1.0"
+APP_VERSION = "1.0.1"
 SWAP_MOD_NAME = "Start game through F4SE"
 SWAP_SOURCE = "(made by Mauser)"
 OLD_SWAP_SOURCES = ("(made by Der Modifikationsmann)",)      # from before the app was renamed
@@ -22,6 +22,14 @@ def clean_mod_name(filename: str) -> str:
     return stem.replace("_", " ").strip() or "Unnamed mod"
 
 
+# The master switch for everything that talks to Nexus Mods. It is False while the app has no approval from
+# Nexus Mods to use their API in a public release. To bring the features back, set this to True: nothing else
+# was removed, and keys people had already entered are still in their settings.
+NEXUS_AVAILABLE = False
+
+NEXUS_UNAVAILABLE_TEXT = ("Nexus Mods support is switched off in this version while %s waits for approval from Nexus Mods. "
+                          "Download mods in your web browser and install them from the file." % APP_NAME)
+
 NEXUS_OFF_TEXT = ("The Nexus Mods features (browsing, one-click installs, update checks) are experimental and switched off. "
                   "They can be switched on in Settings.")
 
@@ -29,6 +37,8 @@ NEXUS_OFF_TEXT = ("The Nexus Mods features (browsing, one-click installs, update
 def nexus_enabled(settings: dict) -> bool:
     """Nexus Mods features are opt-in: they use each person's own API key, an arrangement Nexus Mods has not approved
     for public apps. Installs that already had a key entered before this switch existed keep working."""
+    if not NEXUS_AVAILABLE:
+        return False
     if "nexus_enabled" not in settings:
         settings["nexus_enabled"] = bool(settings.get("nexus_key"))
     return bool(settings["nexus_enabled"])
@@ -64,8 +74,8 @@ def diagnostics(mgr: Manager) -> str:
             state = " (will be created)"
         lines.append("  Fallout4Custom.ini: %s%s" % (ini or "NOT FOUND", state))
         lines.append("  F4SE present: %s" % p.has_f4se())
-    lines.append("Nexus Mods features: %s, API key %s" % ("on" if nexus_enabled(mgr.settings) else "off",
-                                                       "entered" if mgr.settings.get("nexus_key") else "not entered"))
+    lines.append("Nexus Mods features: %s" % ("not available in this version" if not NEXUS_AVAILABLE else "%s, API key %s" % (
+        "on" if nexus_enabled(mgr.settings) else "off", "entered" if mgr.settings.get("nexus_key") else "not entered")))
     handler = ""
     if shutil.which("xdg-mime"):
         try:

@@ -314,6 +314,16 @@ class BrowseTab(QWidget):
         self.results = []
         self._fill_results()
 
+    def set_banner(self, text: str) -> None:
+        """A notice across the top of the tab ('' removes it)."""
+        if getattr(self, "_banner", None) is None:
+            self._banner = QLabel()
+            self._banner.setObjectName("banner")
+            self._banner.setWordWrap(True)
+            self.layout().insertWidget(0, self._banner)
+        self._banner.setText(text)
+        self._banner.setVisible(bool(text))
+
     def _show_empty(self, state: str, text: str = "") -> None:
         """Swap the board for the mascot with a line of text, or back ('' = show the list)."""
         if not state:

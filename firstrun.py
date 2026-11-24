@@ -14,11 +14,12 @@ import gamever
 import providers as prov
 import steam
 import theme
+import common
 from common import APP_NAME, nexus_enabled
 
 STOPS = (("WELCOME ABOARD", "Welcome aboard"),
          ("FIND THE GAME", "Where is Fallout 4?"),
-         ("NEXUS MODS", "Connect Nexus Mods"),
+         ("GETTING MODS", "Getting mods"),
          ("PICK YOUR LOOK", "Pick your look"),
          ("READY TO DEPART", "Ready to depart"))
 
@@ -159,6 +160,15 @@ class SetupWizard(QDialog):
         for w in (self.key, self.check_btn):
             w.setEnabled(self.nexus_on.isChecked())
             self.nexus_on.toggled.connect(w.setEnabled)
+        if not common.NEXUS_AVAILABLE:
+            self.nexus_on.setChecked(bool(self.mgr.settings.get("nexus_enabled")))     # kept as it was, unseen
+            return self._page(
+                self._text("To install a mod, download its file from Nexus Mods (or anywhere else) in your web browser, "
+                           "then press <b>Install mod</b> in %s or drop the file on the window." % APP_NAME),
+                self._text("Browsing Nexus Mods inside the app and one-click installs are <b>switched off in this "
+                           "version</b>. They need approval from Nexus Mods, which %s has asked for and does not have "
+                           "yet. They will return in a later version if it is granted." % APP_NAME),
+                self._text("Nothing to set up at this stop."))
         return self._page(
             self._text("%s works without Nexus Mods: download a mod's file in your web browser, then use <b>Install mod</b> "
                        "or drop the file on the window. This stop is optional." % APP_NAME),
@@ -316,11 +326,17 @@ class SetupWizard(QDialog):
     def _fill_summary(self) -> None:
         folder = self.game_dir()
         rows = ["<b>Game:</b> %s" % (folder.replace(os.path.expanduser("~"), "~") if folder else "not set yet (Settings)"),
-                "<b>Nexus Mods:</b> %s" % (("experimental features on, key entered" if self.key.text().strip() else
-                                            "experimental features on, but no key yet (Settings)") if self.nexus_on.isChecked()
-                                           else "off; install from files you download yourself"),
+                "<b>Getting mods:</b> %s" % self._nexus_summary(),
                 "<b>Look:</b> %s" % self.theme_box.currentText()]
         self.summary.setText("<br>".join(rows))
+
+    def _nexus_summary(self) -> str:
+        if not common.NEXUS_AVAILABLE:
+            return "from files you download yourself (Nexus Mods support is not available in this version)"
+        if not self.nexus_on.isChecked():
+            return "from files you download yourself; the Nexus Mods features are off"
+        return ("experimental Nexus Mods features on, key entered" if self.key.text().strip()
+                else "experimental Nexus Mods features on, but no key yet (Settings)")
 
     def _finish(self) -> None:
         folder = self.game_dir()

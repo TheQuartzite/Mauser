@@ -783,7 +783,19 @@ class GitHubProvider(Provider):
         return file.url
 
 
+def dormant_nexus() -> "NexusProvider":
+    """A Nexus provider that never has a key: every request for it explains that the support is switched off."""
+    import common
+    nexus = NexusProvider("")
+    nexus.key_help = common.NEXUS_UNAVAILABLE_TEXT if not common.NEXUS_AVAILABLE else common.NEXUS_OFF_TEXT
+    nexus.no_key_text = "Nexus Mods is not in use."
+    return nexus
+
+
 def all_providers(nexus_key: str = "", nexus_on: bool = True) -> list:
+    import common
+    if not common.NEXUS_AVAILABLE:
+        return [GitHubProvider()]                 # Nexus is not offered at all in this version
     nexus = NexusProvider(nexus_key if nexus_on else "")
     if not nexus_on:
         from common import NEXUS_OFF_TEXT

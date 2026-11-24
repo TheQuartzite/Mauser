@@ -31,6 +31,7 @@ import steam
 import theme
 from browse import BrowseTab, human_size
 from gamepage import GameSettingsTab
+import common
 import savefile
 import dialogs
 import profiles
@@ -360,12 +361,26 @@ class SettingsDialog(QDialog):
         self.nexus_key = QLineEdit(str(mgr.settings.get("nexus_key", "")))
         self.nexus_on.toggled.connect(self.nexus_key.setEnabled)
         self.nexus_key.setEnabled(self.nexus_on.isChecked())
+        if not common.NEXUS_AVAILABLE:
+            unavailable = QLabel(common.NEXUS_UNAVAILABLE_TEXT)
+            unavailable.setWordWrap(True)
+            form.removeRow(self.nexus_on)                     # the switch and the key box come back with the feature
+            self.nexus_on = QCheckBox(self)
+            self.nexus_on.hide()
+            self.nexus_on.setChecked(bool(mgr.settings.get("nexus_enabled")))      # kept as it was, for when it returns
+            form.addRow("Nexus Mods", unavailable)
         self.nexus_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.nexus_key.setPlaceholderText("Personal API key from your Nexus Mods account settings")
-        form.addRow("Nexus Mods API key", self._with_buttons(self.nexus_key, [("Check", self._check_key)]))
+        key_row = self._with_buttons(self.nexus_key, [("Check", self._check_key)])
         self.key_status = QLabel(prov.NexusProvider.key_help)
         self.key_status.setWordWrap(True)
-        form.addRow("", self.key_status)
+        if common.NEXUS_AVAILABLE:
+            form.addRow("Nexus Mods API key", key_row)
+            form.addRow("", self.key_status)
+        else:                                   # kept, unseen, so the saved key passes through Settings untouched
+            for w in (key_row, self.key_status):
+                w.setParent(self)
+                w.hide()
         self.discord_on = QCheckBox("Show what I am doing in Discord (Rich Presence)")
         self.discord_on.setChecked(bool(mgr.settings.get("discord_on")))
         form.addRow("Discord", self.discord_on)
@@ -597,6 +612,7 @@ class MainWindow(QMainWindow):
         updates = QPushButton("Check for updates")
         updates.setToolTip("Ask Nexus Mods whether newer files exist for the mods installed from there")
         updates.clicked.connect(self.check_updates)
+        updates.setVisible(common.NEXUS_AVAILABLE)            # needs Nexus Mods
         row.addWidget(updates)
         more_menu = QMenu(self)
         more_menu.addAction("Install from a folder…", self.install_folder)
@@ -639,7 +655,7 @@ class MainWindow(QMainWindow):
         self.mod_menu.addAction("Open its folder", self.open_mod_folder)
         self.mod_menu.addAction("Conflicts of this mod…", self.show_conflicts)
         self.mod_menu.addSeparator()
-        self.mod_menu.addAction("Update to the newer file", self.update_selected)
+        self.mod_menu.addAction("Update to the newer file", self.update_selected).setVisible(common.NEXUS_AVAILABLE)
         self.mod_menu.addAction("Set save risk…", self.choose_risk)
         self.mod_menu.addAction("Pin to the bottom, or unpin", self.toggle_pin_mod)
         self.mod_menu.addSeparator()
@@ -714,6 +730,8 @@ class MainWindow(QMainWindow):
         self.browser = BrowseTab(self.providers, os.path.join(self.mgr.cache_dir, "thumbs"))
         self.browser.layout().setContentsMargins(24, 18, 24, 8)
         self.browser.logLine.connect(self.say)
+        if not common.NEXUS_AVAILABLE:
+            self.browser.set_banner(common.NEXUS_UNAVAILABLE_TEXT + " This tab can still search GitHub.")
         self.browser.requirementsRequested.connect(self.install_requirements)
         self.browser.queueRequested.connect(self.install_many_from_browser)
         self.browser.installed_lookup = lambda: ({m.origin for m in self.mgr.mods if m.origin},
@@ -1786,10 +1804,12 @@ class MainWindow(QMainWindow):
         if missing:
             lines.append("Not installed (%d): %s" % (len(missing), ", ".join(missing[:8]) + ("…" if len(missing) > 8 else "")))
             lines.append("If a plugin is a patch that joins two mods and you only use one of them, switching the patch off "
-                         "is the right fix. If you do want the other mod, find and install it.")
+                         "is the right fix. If you do want the other mod, %s." % (
+                             "find and install it" if common.NEXUS_AVAILABLE else "download it and install it from the file"))
         box.setInformativeText("\n\n".join(lines))
         on_btn = box.addButton("Switch on what is off", QMessageBox.ButtonRole.ActionRole) if off else None
-        find_btn = box.addButton("Find what is missing…", QMessageBox.ButtonRole.ActionRole) if missing else None
+        find_btn = (box.addButton("Find what is missing…", QMessageBox.ButtonRole.ActionRole)
+                    if missing and common.NEXUS_AVAILABLE else None)
         off_btn = box.addButton("Switch off the %d plugin%s that cannot work" % (len(blocked), "" if len(blocked) == 1 else "s"),
                                 QMessageBox.ButtonRole.ActionRole) if blocked else None
         box.addButton(QMessageBox.StandardButton.Cancel)
@@ -2090,7 +2110,7 @@ class MainWindow(QMainWindow):
                 self.say(note)
 
     def _nexus(self) -> prov.NexusProvider:
-        return next(p for p in self.providers if p.id == "nexus")
+        return next((p for p in self.providers if p.id == "nexus"), None) or prov.dormant_nexus()
 
     def _fetch_and_install(self, url: str, mod: prov.ModSummary, file: prov.ModFile) -> None:
         # Sources other than Nexus get a warning when an archive holds programs.

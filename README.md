@@ -54,20 +54,21 @@ Four themes. A mouse called Vinny who carries the parcels.
 
 ![The first-time setup, with Vinny at the departure board](docs/first-run.png)
 
-## Nexus Mods: built in, switched off
+## Nexus Mods: switched off for now
 
-Mauser can browse Nexus Mods, install with one click, follow requirement links
-and check for updates. In this release those features are **off until you
-turn them on in Settings**.
+Mauser was built to browse Nexus Mods, install with one click, follow
+requirement links and check for updates. From version 1.0.1 all of that is
+**switched off**, and there is no setting to turn it back on.
 
-The reason is boring but important. They work using your own personal Nexus
-API key, and Nexus's rules allow personal keys for personal use and testing
-while asking public apps to register with them. I have not been through that
-yet. If you switch the features on, they may stop working one day. Search and
-categories also lean on a part of Nexus that is not documented.
+Those features need permission from Nexus Mods to use their API in a public
+app. I have asked, and there is a queue. Until I hear back, Mauser does not
+talk to Nexus at all. The code is still here, behind one switch
+(`NEXUS_AVAILABLE` in `common.py`), and it comes back in a release if
+approval does.
 
-Everything else works without any of it. Download the mod in your browser,
-then install it from the file.
+Nothing else depends on it. Download a mod in your web browser, then install
+it from the file. If you had entered an API key in 1.0, it is left in your
+settings untouched and unused.
 
 ## Getting it
 
@@ -92,9 +93,6 @@ You need 64-bit Linux with glibc 2.39 or newer.
 | Mod library, settings, crash reports | `~/.local/share/mauser` |
 | The unpacked app | `~/.local/share/mauser-app` |
 | Menu entry | `~/.local/share/applications/mauser.desktop` |
-
-If you enter a Nexus API key it is stored in `state.json` in the first folder,
-readable only by you, and it is only ever sent to Nexus Mods.
 
 To remove Mauser completely, use **Settings > Remove all mod files from the
 game**, then delete those three things.
@@ -143,6 +141,6 @@ Valve, Nexus Mods or Discord.
 Most of Mauser's code was written with the help of an AI coding assistant,
 working to my design and direction. I decided what the app does and how it
 looks, and I run each build on my own setup before it goes up. Parts of it
-have only ever been tested against stand-ins (a fake Nexus server, a made-up
-save file), so treat it as young software and keep backups of saves you care
+have only ever been tested against stand-ins (a made-up save file, a pretend
+Proton), so treat it as young software and keep backups of saves you care
 about.

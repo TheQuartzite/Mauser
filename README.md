@@ -1,113 +1,148 @@
-# Mauser
+<p align="center">
+  <img src="icon.svg" width="96" alt="Mauser icon: a letter M with mouse ears and a tail">
+</p>
 
-A mod manager for Fallout 4 on Linux, for the Steam version running through
-Proton. It runs natively: no Windows mod manager under Wine, no protontricks.
+<h1 align="center">Mauser</h1>
 
-Version 1.0. So far it has been used on one distribution (Bazzite, KDE,
-Wayland). Other distributions, Flatpak Steam and the Steam Deck are untested.
+<p align="center">A Fallout 4 mod manager that runs on Linux, for people who are tired of pretending to run Windows.</p>
 
-## What it does
+![The Installed tab, showing the mod list on the left and the load order on the right](docs/installed.png)
 
-- **Installs mods** from `.zip`, `.7z` and `.rar` files or folders, including
-  mods with an installer (FOMOD). Drop a file on the window or use
-  **Install mod**.
-- **Keeps the game folder clean.** Mods live in their own library and are
-  linked into the game. Everything it places is recorded and can be removed
-  again in one step; files it replaces are backed up and put back.
-- **Mod order and load order**, by dragging. Shows which mod wins each
-  conflicting file, counts plugins and archives against the game's limits,
-  and flags plugins whose requirements are missing, with a way to fix them.
-- **Profiles**: separate sets of switched-on mods, order, load order and game
-  settings files, sharing one mod library.
-- **Mod lists**: save your setup to a small file and rebuild it elsewhere.
-- **Save check**: lists the plugins a save expects and which are missing.
-- **Save-risk tags**: marks mods that become part of a save.
-- **Game settings** without the launcher: resolution, window mode, vsync,
-  field of view.
-- **F4SE**: one switch makes Steam's Play button start the game through the
-  script extender.
-- **Crash reports**: notices when the game appears to have crashed and writes
-  a report with likely causes, your mods, load order and logs.
-- **Tools**: runs Windows modding programs (FO4Edit, BodySlide) in the game's
-  Proton setup and collects what they generate into one mod.
-- **Discord Rich Presence** (optional, off by default).
-- Four themes, and Vinny the station mouse.
+I mod Fallout 4 on Bazzite. The usual advice is to run a Windows mod manager
+through Wine or fight with protontricks, and the native option I tried would
+not work with my install. So I made my own. Mauser talks to the Steam copy of
+the game inside its Proton prefix directly, and it is one file you download
+and run.
 
-## Nexus Mods features are experimental and off by default
+It is version 1.0 and it has been used on exactly one machine: mine (Bazzite,
+KDE, Wayland). It may well work on yours. If it does not, please open an issue
+and tell me what happened.
 
-Mauser can browse Nexus Mods, install with one click, follow requirement
-links and check for updates. These features are **switched off unless you
-turn them on in Settings**, because they work with your own personal Nexus
-API key. Nexus Mods' API rules allow personal keys for personal use and
-testing, and ask public apps to be registered with them. Mauser is not
-registered yet. If you switch the features on, you do so knowing they may stop
-working. Search and categories also rely on a Nexus interface that is not
-documented and can change.
+## What you get
 
-Everything else works without Nexus: download a mod's file in your web
-browser and install it from the file.
+**Installing.** Drop a `.zip`, `.7z` or `.rar` on the window, or pick a
+folder. Mods that come with an installer (FOMOD) get their options screen.
 
-## Install
+**A game folder you can get back.** Mods sit in their own library and are
+linked into the game, so nothing is unpacked on top of your install. Mauser
+keeps a record of every file it places, backs up anything it replaces, and one
+button takes it all out again.
 
-1. Download `Mauser` from the releases page.
-2. Make it executable: right-click, Properties, Permissions, or
-   `chmod +x Mauser`.
-3. Run it. The first start unpacks the app to `~/.local/share/mauser-app`
-   (about 180 MB) and takes a few seconds; later starts are quick. It adds
-   itself to your application menu.
+**Order, and what it means.** Drag mods and plugins into order. A conflicts
+window shows which mod wins each file. Plugins that need something you do not
+have are marked, with a way to fix them. A counter keeps an eye on the
+plugin and archive limits.
 
-Start Fallout 4 from Steam once, as far as the main menu, before first use, so
-the game has created its settings folder.
+**Profiles and lists.** Keep separate setups that share one mod library, each
+with its own load order and game settings files. Save a setup to a small file
+and rebuild it on another machine.
 
-Needs a 64-bit Linux with glibc 2.39 or newer, and `tar` with xz support.
+**Save safety.** Each mod gets a risk tag: high if it becomes part of your
+save, low if you can add or remove it freely. You can point Mauser at a save
+and it will tell you which plugins that save expects and which are missing.
 
-## Where things are kept
+**The bits the launcher used to do.** Resolution, window mode, vsync and
+field of view, without opening the launcher. One switch makes Steam's Play
+button start the game through F4SE.
+
+**When it goes wrong.** If the game crashes, Mauser notices and writes a
+report: likely causes first, then your mods, load order and the logs.
+
+**Extras.** Run FO4Edit or BodySlide inside the game's Proton setup and have
+their output collected into its own mod. Discord Rich Presence if you want it.
+Four themes. A mouse called Vinny who carries the parcels.
+
+![The first-time setup, with Vinny at the departure board](docs/first-run.png)
+
+## Nexus Mods: built in, switched off
+
+Mauser can browse Nexus Mods, install with one click, follow requirement links
+and check for updates. In this release those features are **off until you
+turn them on in Settings**.
+
+The reason is boring but important. They work using your own personal Nexus
+API key, and Nexus's rules allow personal keys for personal use and testing
+while asking public apps to register with them. I have not been through that
+yet. If you switch the features on, they may stop working one day. Search and
+categories also lean on a part of Nexus that is not documented.
+
+Everything else works without any of it. Download the mod in your browser,
+then install it from the file.
+
+## Getting it
+
+1. Download `Mauser` from the [latest release](https://github.com/TheQuartzite/Mauser/releases/latest).
+2. Make it executable. In most file managers that is right-click, Properties,
+   Permissions. In a terminal: `chmod +x Mauser`
+3. Run it.
+
+The first start takes a few seconds while it unpacks itself to
+`~/.local/share/mauser-app` (about 180 MB). After that it opens quickly and
+shows up in your application menu.
+
+Before the first run, start Fallout 4 from Steam once and get as far as the
+main menu, so the game has made its settings folder.
+
+You need 64-bit Linux with glibc 2.39 or newer.
+
+## Where it keeps things
 
 | What | Where |
 |---|---|
-| Your mod library, settings, crash reports | `~/.local/share/mauser` |
+| Mod library, settings, crash reports | `~/.local/share/mauser` |
 | The unpacked app | `~/.local/share/mauser-app` |
 | Menu entry | `~/.local/share/applications/mauser.desktop` |
 
-Your Nexus API key, if you enter one, is stored in `state.json` in the first
-folder, readable only by you. It is never sent anywhere but Nexus Mods.
+If you enter a Nexus API key it is stored in `state.json` in the first folder,
+readable only by you, and it is only ever sent to Nexus Mods.
 
-To remove Mauser completely: use **Settings, Remove all mod files from the
-game**, then delete the three items above.
+To remove Mauser completely, use **Settings > Remove all mod files from the
+game**, then delete those three things.
 
-## Run from source
+## Running from source
 
-    git clone <this repository>
-    cd <folder>
-    bash install.sh
+```
+git clone https://github.com/TheQuartzite/Mauser.git
+cd Mauser
+bash install.sh
+```
 
-That creates a `.venv` with PySide6 and adds a menu entry. Or by hand:
+That makes a `.venv` with PySide6 in it and adds a menu entry. If you would
+rather do it by hand:
 
-    python -m venv .venv
-    .venv/bin/pip install -r requirements.txt
-    .venv/bin/python modmanager.py
+```
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python modmanager.py
+```
 
-Useful commands: `modmanager.py --diagnose` prints what it detects about your
-game; `modmanager.py --selftest` checks the app's own parts.
+`modmanager.py --diagnose` prints what Mauser can see of your game, which is
+the first thing to paste into a bug report.
 
-Tests that need no game and no network:
+There are two test files that need neither the game nor a network:
 
-    python test_modmanager.py
-    python test_online.py
+```
+python test_modmanager.py
+python test_online.py
+```
 
-## Build the downloadable file
+To build the single downloadable file, read the top of `packaging/build.py`.
 
-See the top of `packaging/build.py`. In short: a Python environment with
-PySide6-Essentials, PyInstaller and py7zz, plus gcc, then
-`python packaging/build.py`. The result is `dist/Mauser`.
-
-## Licences
+## Licence
 
 Mauser's own code is under the [MIT License](LICENSE), copyright Amy Amethyst.
+The app also contains Qt, Python, 7-Zip and three fonts, each under its own
+licence. Those are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+and under **Settings > About** in the app.
 
-Third-party software and fonts included in the app are listed in
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); the same text is under
-**Settings, About** in the app.
+Mauser is not made by, endorsed by or affiliated with Bethesda, ZeniMax,
+Valve, Nexus Mods or Discord.
 
-Mauser is not made by, endorsed by or affiliated with Bethesda Softworks,
-ZeniMax, Valve, Nexus Mods or Discord.
+## AI-assisted disclosure
+
+Most of Mauser's code was written with the help of an AI coding assistant,
+working to my design and direction. I decided what the app does and how it
+looks, and I run each build on my own setup before it goes up. Parts of it
+have only ever been tested against stand-ins (a fake Nexus server, a made-up
+save file), so treat it as young software and keep backups of saves you care
+about.

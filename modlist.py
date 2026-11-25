@@ -26,7 +26,7 @@ def export(name: str, app: str, game_version: str, mods: list, plugins: list, sk
         if m.source in skip_sources:        # things the app generated itself
             continue
         out.append({"name": m.name, "enabled": bool(m.enabled), "origin": m.origin, "file_id": m.file_id,
-                    "file_name": m.file_name, "version": m.version, "page": m.page, "risk": m.risk,
+                    "file_name": m.file_name, "version": m.version, "page": m.page, "risk": m.risk, "category": m.category, "tags": list(m.tags),
                     "target": m.target, "archive": m.source})
     return {"format": FORMAT, "version": VERSION, "name": name.strip() or "My mod list", "app": app,
             "created": datetime.datetime.now().isoformat(timespec="seconds"), "game": game_version,
@@ -60,6 +60,8 @@ def loads(text: str) -> dict:
                      "file_id": str(m.get("file_id") or "")[:40], "file_name": str(m.get("file_name") or "")[:200],
                      "version": str(m.get("version") or "")[:60], "page": str(m.get("page") or "")[:400],
                      "risk": m.get("risk") if m.get("risk") in ("high", "low") else "",
+                     "category": str(m.get("category") or "")[:60],
+                     "tags": [str(t)[:40] for t in m.get("tags", []) if str(t).strip()][:12] if isinstance(m.get("tags"), list) else [],
                      "target": "root" if m.get("target") == "root" else "data", "archive": str(m.get("archive") or "")[:200]})
     plugins = []
     for p in data.get("plugins") if isinstance(data.get("plugins"), list) else []:

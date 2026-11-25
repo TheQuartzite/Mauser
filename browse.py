@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThread, QThreadPool, 
 from PySide6.QtGui import QBrush, QColor, QDesktopServices, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFrame, QMessageBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QSplitter,
-    QStackedLayout, QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QGridLayout, QScrollArea, QStackedLayout, QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 import net
@@ -122,6 +122,7 @@ class BrowseTab(QWidget):
         self.category_box.addItem("All categories", "")
         self.category_box.activated.connect(lambda _i: self._category_changed())
         self.search_edit = QLineEdit()
+        self.search_edit.setMinimumWidth(120)
         self.search_edit.setPlaceholderText("Search mods, or paste a mod page address")
         self.search_edit.returnPressed.connect(self.start_search)
         go = QPushButton("Search")
@@ -210,7 +211,13 @@ class BrowseTab(QWidget):
         rl = QVBoxLayout(inner)
         rl.setContentsMargins(16, 14, 16, 16)
         rl.setSpacing(8)
-        outer.addWidget(inner, 1)
+        # In a small window the panel scrolls as a whole, so the files and the description keep a usable height.
+        self.details_scroll = QScrollArea()
+        self.details_scroll.setWidgetResizable(True)
+        self.details_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.details_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.details_scroll.setWidget(inner)
+        outer.addWidget(self.details_scroll, 1)
         head_row = QHBoxLayout()
         head_row.setSpacing(14)
         self.picture = QLabel()
@@ -247,6 +254,7 @@ class BrowseTab(QWidget):
         self.requirements.document().setDefaultStyleSheet("a { color: %s; }" % theme.c("link"))
         self.requirements.setOpenLinks(False)                 # links to other mods open here, not in the web browser
         self.requirements.anchorClicked.connect(self._requirement_clicked)
+        self.requirements.setMinimumHeight(56)
         self.requirements.setMaximumHeight(96)
         rl.addWidget(self.requirements)
 
@@ -261,10 +269,13 @@ class BrowseTab(QWidget):
         fh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for col in (1, 2, 3, 4, 5):
             fh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
-        self.files.setMaximumHeight(150)
+        self.files.setMinimumHeight(118)          # the header and at least three files
+        self.files.setMaximumHeight(190)
         self.files.itemDoubleClicked.connect(lambda _i, _c: self.install_selected())
         rl.addWidget(self.files)
-        row = QHBoxLayout()
+        row = self._buttons = QGridLayout()
+        row.setHorizontalSpacing(8)
+        row.setVerticalSpacing(6)
         self.install_btn = QPushButton("Install selected file")
         self.install_btn.setProperty("sign", "yellow")
         self.install_btn.clicked.connect(self.install_selected)
@@ -279,21 +290,25 @@ class BrowseTab(QWidget):
         self.back_btn = QPushButton("Back")
         self.back_btn.clicked.connect(self._go_back)
         self.back_btn.hide()
-        row.addWidget(self.back_btn)
-        row.addWidget(self.install_btn)
-        row.addWidget(self.req_btn)
-        row.addWidget(self.page_btn)
-        row.addStretch(1)
+        self._two_rows = None
+        self._place_buttons(False)
         rl.addLayout(row)
 
         rl.addWidget(heading("Description"))
         self.description = QTextBrowser()
         self.description.document().setDefaultStyleSheet("a { color: %s; }" % theme.c("link"))
         self.description.setOpenExternalLinks(True)
+        self.description.setMinimumHeight(170)
         rl.addWidget(self.description, 1)
         split.addWidget(right)
         split.setSizes([600, 660])
+        split.setChildrenCollapsible(False)
+        left.setMinimumWidth(300)
+        right.setMinimumWidth(380)
+        self._details_panel = right
+        self._picture_source: Optional[QPixmap] = None
         split.setHandleWidth(18)
+        split.splitterMoved.connect(lambda _p, _i: self._fit())
         lay.addWidget(split, 1)
         self._loaded_once = False
         self._provider_changed()
@@ -625,8 +640,56 @@ class BrowseTab(QWidget):
         self.page_btn.setEnabled(False)
 
     def _show_picture(self, pix: QPixmap) -> None:
+        self._picture_source = pix
         self.picture.setPixmap(pix.scaled(self.picture.size(), Qt.AspectRatioMode.KeepAspectRatio,
                                           Qt.TransformationMode.SmoothTransformation))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit()
+
+    def _place_buttons(self, two_rows: bool) -> None:
+        """The four buttons under the files: side by side, or two and two when the panel is too narrow for that."""
+        if two_rows == self._two_rows:
+            return
+        self._two_rows = two_rows
+        buttons = (self.back_btn, self.install_btn, self.req_btn, self.page_btn)
+        for button in buttons:
+            self._buttons.removeWidget(button)
+        for col in range(5):
+            self._buttons.setColumnStretch(col, 0)
+        if two_rows:
+            self._buttons.addWidget(self.install_btn, 0, 0)
+            self._buttons.addWidget(self.back_btn, 0, 1)
+            self._buttons.addWidget(self.req_btn, 1, 0)
+            self._buttons.addWidget(self.page_btn, 1, 1)
+            self._buttons.setColumnStretch(2, 1)
+        else:
+            for col, button in enumerate(buttons):
+                self._buttons.addWidget(button, 0, col)
+            self._buttons.setColumnStretch(4, 1)
+
+    def _fit(self) -> None:
+        """Adapt to the room there is: a smaller picture and shorter button texts when the details panel is narrow,
+        smaller thumbnails when the board is."""
+        narrow = self._details_panel.width() < 620
+        size = QSize(176, 99) if narrow else QSize(288, 162)
+        if self.picture.size() != size:
+            self.picture.setFixedSize(size)
+            if self._picture_source is not None and not self._picture_source.isNull():
+                self.picture.setPixmap(self._picture_source.scaled(size, Qt.AspectRatioMode.KeepAspectRatio,
+                                                                   Qt.TransformationMode.SmoothTransformation))
+        self.install_btn.setText("Install" if narrow else "Install selected file")
+        self.req_btn.setText("Requirements…" if narrow else "Install requirements…")
+        self.page_btn.setText("Open page" if narrow else "Open mod page in web browser")
+        self._place_buttons(self._details_panel.width() < 600)
+        self.adult.setText("Adult" if self.width() < 1000 else "Show adult content")
+        self.adult.setToolTip("Show adult content")
+        self.page_btn.setToolTip("Open the mod's page in your web browser")
+        self.install_btn.setToolTip("Install the file selected in the list above")
+        icon = QSize(72, 40) if self.list.width() < 420 else QSize(104, 58)
+        if self.list.iconSize() != icon:
+            self.list.setIconSize(icon)
 
     def _selected(self, item) -> None:
         if item is None:
@@ -696,6 +759,9 @@ class BrowseTab(QWidget):
             self.requirements.setHtml("<br>".join(rows))
         else:
             self.requirements.setPlainText(details.requirements_note or "None listed.")
+        # one line when there is nothing to list, so the files sit higher in a small window
+        self.requirements.setMaximumHeight(96 if details.requirements or details.requirements_note else 40)
+        self.requirements.setMinimumHeight(56 if details.requirements or details.requirements_note else 40)
         self.req_btn.setEnabled(any(r.kind == "mod" and r.mod_id for r in details.requirements))
         self.files.clear()
         gen = gamever.generation(self.game_version)

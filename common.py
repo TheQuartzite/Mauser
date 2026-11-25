@@ -9,7 +9,7 @@ import steam
 from core import Manager
 
 APP_NAME = "Mauser"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.2.0"
 SWAP_MOD_NAME = "Start game through F4SE"
 SWAP_SOURCE = "(made by Mauser)"
 OLD_SWAP_SOURCES = ("(made by Der Modifikationsmann)",)      # from before the app was renamed

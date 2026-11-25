@@ -11,6 +11,7 @@ from typing import Callable, Optional
 from PySide6.QtCore import QEvent, QEventLoop, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QBrush, QColor, QCursor, QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
+    QHeaderView,
     QMenu, QInputDialog,
     QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
@@ -102,6 +103,24 @@ def run_busy(parent, label: str, fn: Callable):
     return task.value
 
 
+MOD_SORTS = (("priority", "Priority (drag to reorder)"), ("name", "Name"), ("newest", "Newest installed"),
+             ("oldest", "Oldest installed"), ("size", "Largest"), ("files", "Most files"), ("risk", "Save risk"), ("tags", "Tags"))
+MOD_COL_NAME, MOD_COL_TAGS, MOD_COL_FILE, MOD_COL_SIZE, MOD_COL_FILES, MOD_COL_CONFLICTS, MOD_COL_RISK, MOD_COL_ORDER = range(8)
+MOD_COLUMNS = 8
+PLUGIN_HINT = "Load order. Plugins lower in the list load later and override earlier ones. Drag to reorder."
+
+
+def short_size(n: int) -> str:
+    """A size in at most seven characters: 879 KB, 5.0 MB, 1.2 GB."""
+    if n <= 0:
+        return ""
+    if n < 1024 * 1024:
+        return "%d KB" % max(1, round(n / 1024))
+    if n < 1024 ** 3:
+        return "%.1f MB" % (n / 1024 ** 2) if n < 100 * 1024 ** 2 else "%d MB" % round(n / 1024 ** 2)
+    return "%.1f GB" % (n / 1024 ** 3)
+
+
 class OrderTree(QTreeWidget):
     """A list whose rows can be dragged into a new order."""
     reordered = Signal()
@@ -127,6 +146,11 @@ class Mascot(theme.RatLabel):
         self._back = QTimer(self)
         self._back.setSingleShot(True)
         self._back.timeout.connect(lambda: self.set_state("idle"))
+
+    def resize_to(self, size: int) -> None:
+        self._size = size
+        self.setFixedSize(size, size)
+        self.refresh()
 
     def set_state(self, state: str, hold_ms: int = 0) -> None:
         if state not in theme.RAT_STATES:
@@ -530,10 +554,11 @@ class MainWindow(QMainWindow):
             setattr(self, name, self._guard(getattr(self, name), name, queue=True))
         for name in ("remove_mod", "move_mod", "toggle_pin_mod", "update_selected", "check_updates", "load_mod_list",
                      "switch_profile", "new_profile", "rename_profile", "delete_profile", "open_tools", "toggle_f4se",
-                     "open_settings", "run_setup", "choose_risk", "_mods_dragged", "_apply_mod_change"):
+                     "open_settings", "run_setup", "choose_risk", "_mods_dragged", "_apply_mod_change", "fill_categories"):
             setattr(self, name, self._guard(getattr(self, name), name, queue=False))
         self.setWindowTitle(APP_NAME)
         self.resize(1280, 800)
+        self.setMinimumSize(900, 600)
         self.setAcceptDrops(True)
 
         # Header: the name plate, the section signs, and the two things you do most.
@@ -619,6 +644,7 @@ class MainWindow(QMainWindow):
         more_menu.addSeparator()
         more_menu.addAction("Conflicts…", self.show_conflicts)
         more_menu.addAction("Check a save…", self.check_save)
+        more_menu.addAction("Get mod categories from Nexus Mods", self.fill_categories).setVisible(common.NEXUS_AVAILABLE)
         more_menu.addAction("Tools…", self.open_tools)
         more_menu.addSeparator()
         profile_menu = more_menu.addMenu("Profiles")
@@ -638,16 +664,46 @@ class MainWindow(QMainWindow):
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
-        ll.addWidget(QLabel("Mods. When two mods contain the same file, the one lower in the list wins. Drag to reorder."))
+        tools_row = QHBoxLayout()
+        tools_row.setSpacing(8)
+        self.mod_filter = QLineEdit()
+        self.mod_filter.setPlaceholderText("Filter mods by name or tag")
+        self.mod_filter.setAccessibleName("Filter mods")
+        self.mod_filter.setClearButtonEnabled(True)
+        self.mod_filter.textChanged.connect(lambda _t: self._fill_mods())
+        self.mod_sort = QComboBox()
+        self.mod_sort.setAccessibleName("Sort mods by")
+        self.mod_sort.setMaxVisibleItems(14)
+        for key, text in MOD_SORTS:
+            self.mod_sort.addItem(text, key)
+        self.mod_sort.setToolTip("\"Priority\" is the real order: when two mods contain the same file, the one lower in the list "
+                                 "wins, and you can drag to reorder.\nThe other choices only change how the list is shown.")
+        self.mod_sort.currentIndexChanged.connect(lambda _i: self._fill_mods())
+        tools_row.addWidget(self.mod_filter, 1)
+        tools_row.addWidget(QLabel("Sort"))
+        tools_row.addWidget(self.mod_sort)
+        ll.addLayout(tools_row)
+        self.mod_hint = QLabel("")
+        self.mod_hint.setWordWrap(True)
+        ll.addWidget(self.mod_hint)
         self.mod_tree = OrderTree()
         self.mod_tree.reordered.connect(self._mods_dragged)
-        self.mod_tree.setHeaderLabels(["Mod", "Downloaded file", "Files", "Conflicts", "Goes into", "Risk"])
+        self.mod_tree.setHeaderLabels(["Mod", "Tags", "Downloaded file", "Size", "Files", "Conflicts", "Risk", "#"])
         self.mod_tree.setRootIsDecorated(False)
-        for col, width in enumerate((184, 126, 44, 92, 100, 50)):
+        mod_header = self.mod_tree.header()
+        mod_header.setStretchLastSection(False)
+        mod_header.setMinimumSectionSize(34)
+        mod_header.setSectionResizeMode(MOD_COL_NAME, QHeaderView.ResizeMode.Stretch)
+        for col, width in ((MOD_COL_TAGS, 150), (MOD_COL_FILE, 140), (MOD_COL_SIZE, 72), (MOD_COL_FILES, 46),
+                           (MOD_COL_CONFLICTS, 96), (MOD_COL_RISK, 50), (MOD_COL_ORDER, 38)):
             self.mod_tree.setColumnWidth(col, width)
-        self.mod_tree.header().setStretchLastSection(True)
-        self.mod_tree.headerItem().setToolTip(5, "HIGH: becomes part of a save. Add it on a new save; removing it can break saves "
-                                                 "made with it.\nlow: adding or removing it barely changes a save.")
+        self.mod_tree.headerItem().setToolTip(MOD_COL_RISK, "HIGH: becomes part of a save. Add it on a new save; removing it can break saves "
+                                                            "made with it.\nlow: adding or removing it barely changes a save.")
+        self.mod_tree.headerItem().setToolTip(MOD_COL_TAGS, "The mod's category on the site it came from, plus your own tags "
+                                                            "(set them from the \"This mod\" menu).")
+        self.mod_tree.headerItem().setToolTip(MOD_COL_ORDER, "Position in the priority order: higher numbers win conflicts.")
+        self.mod_tree.headerItem().setToolTip(MOD_COL_CONFLICTS, "Files this mod shares with others: how many it wins and how many it loses.")
+        self.mod_tree.installEventFilter(self)
         self.mod_tree.itemChanged.connect(self._mod_changed)
         ll.addWidget(self.mod_tree, 1)
         self.mod_menu = QMenu(self)
@@ -656,6 +712,7 @@ class MainWindow(QMainWindow):
         self.mod_menu.addAction("Conflicts of this mod…", self.show_conflicts)
         self.mod_menu.addSeparator()
         self.mod_menu.addAction("Update to the newer file", self.update_selected).setVisible(common.NEXUS_AVAILABLE)
+        self.mod_menu.addAction("Set tags…", self.set_tags)
         self.mod_menu.addAction("Set save risk…", self.choose_risk)
         self.mod_menu.addAction("Pin to the bottom, or unpin", self.toggle_pin_mod)
         self.mod_menu.addSeparator()
@@ -686,12 +743,14 @@ class MainWindow(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        rl.addWidget(QLabel("Load order. Plugins lower in the list load later and override earlier ones. Drag to reorder."))
+        self.plugin_hint = QLabel(PLUGIN_HINT)
+        self.plugin_hint.setToolTip(PLUGIN_HINT)
+        rl.addWidget(self.plugin_hint)
         self.plugin_tree = OrderTree()
         self.plugin_tree.reordered.connect(self._plugins_dragged)
         self.plugin_tree.setHeaderLabels(["Plugin", "Type", "Problems"])
         self.plugin_tree.setRootIsDecorated(False)
-        self.plugin_tree.setColumnWidth(0, 300)
+        self.plugin_tree.setColumnWidth(0, 230)
         self.plugin_tree.itemChanged.connect(self._plugin_changed)
         rl.addWidget(self.plugin_tree, 1)
         self.counts = QLabel("")
@@ -723,7 +782,10 @@ class MainWindow(QMainWindow):
         row.addStretch(1)
         rl.addLayout(row)
         split.addWidget(right)
-        split.setSizes([700, 560])
+        split.setSizes([800, 460])
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        split.setChildrenCollapsible(False)
         lay.addWidget(split, 1)
 
         self.providers = prov.all_providers(nexus_key(self.mgr.settings), nexus_enabled(self.mgr.settings))
@@ -739,6 +801,8 @@ class MainWindow(QMainWindow):
         self._game_version_key = None
         self._last_section = 0
         self._updates: dict = {}             # mod id -> newer ModFile, from the last update check
+        self._mod_col_widths: dict = {}      # widths of columns hidden for lack of room
+        self._compact = False                # a narrow window: shorter texts around the lists
         self._tool = None                    # (process, tool, snapshot of Data before it started)
         self._tool_timer = QTimer(self)
         self._tool_timer.setInterval(1000)
@@ -1071,38 +1135,83 @@ class MainWindow(QMainWindow):
 
     # -- mods list ------------------------------------------------------
 
+    def mod_tags(self, mod: Mod) -> list:
+        """What the Tags column shows: the site's category, the user's own tags, then facts about placement."""
+        tags = ([mod.category] if mod.category else []) + list(mod.tags)
+        if mod.pinned:
+            tags.append("pinned")
+        if mod.target == "root":
+            tags.append("game folder")
+        return tags
+
+    def _mod_view(self) -> list:
+        """The mods to show, filtered and sorted as the controls above the list say."""
+        words = self.mod_filter.text().lower().split()
+        mods = [m for m in self.mgr.mods
+                if all(w in (m.name + " " + " ".join(self.mod_tags(m)) + " " + m.file_name).lower() for w in words)]
+        key = self.mod_sort.currentData() or "priority"
+        if key == "name":
+            mods.sort(key=lambda m: m.name.lower())
+        elif key == "newest":
+            mods.sort(key=lambda m: m.installed, reverse=True)
+        elif key == "oldest":
+            mods.sort(key=lambda m: m.installed)
+        elif key == "size":
+            mods.sort(key=lambda m: self.mgr.measure(m), reverse=True)
+        elif key == "files":
+            mods.sort(key=lambda m: m.files, reverse=True)
+        elif key == "risk":
+            mods.sort(key=lambda m: (0 if self.mgr.risk(m)[0] == "high" else 1, m.name.lower()))
+        elif key == "tags":
+            mods.sort(key=lambda m: (not self.mod_tags(m), " ".join(self.mod_tags(m)).lower(), m.name.lower()))
+        return mods
+
+    def _reordering_allowed(self) -> bool:
+        return (self.mod_sort.currentData() or "priority") == "priority" and not self.mod_filter.text().strip()
+
     def _fill_mods(self) -> None:
         self._filling = True
         current = self._current_mod_id()
         self.mod_tree.clear()
         conflicts = self.mgr.conflicts() if self.mgr.mods else {}
-        for mod in self.mgr.mods:
+        position = {m.id: i + 1 for i, m in enumerate(self.mgr.mods)}
+        unmeasured = [m for m in self.mgr.mods if m.size <= 0 and m.files]
+        view = self._mod_view()
+        for mod in view:
             c = conflicts.get(mod.id, {"wins": [], "loses": []})
             text = []
             if c["wins"]:
-                text.append("overrides %d" % len(c["wins"]))
+                text.append("wins %d" % len(c["wins"]))
             if c["loses"]:
-                text.append("%d overridden" % len(c["loses"]))
+                text.append("loses %d" % len(c["loses"]))
             which = " ".join(x for x in (mod.file_name, ("v" + mod.version) if mod.version else "") if x)
-            item = QTreeWidgetItem([mod.name, which or clean_mod_name(mod.source) if mod.source and mod.source != SWAP_SOURCE else which,
-                                    str(mod.files), ", ".join(text), "Game folder" if mod.target == "root" else "Data", ""])
+            internal = mod.source == SWAP_SOURCE or mod.source in OLD_SWAP_SOURCES
+            item = QTreeWidgetItem([mod.name, ", ".join(self.mod_tags(mod)),
+                                    which or (clean_mod_name(mod.source) if mod.source and not internal else ""),
+                                    short_size(self.mgr.measure(mod)), str(mod.files), ", ".join(text), "", str(position[mod.id])])
             level, how, why = self.mgr.risk(mod)
-            if mod.source == SWAP_SOURCE or mod.source in OLD_SWAP_SOURCES:
+            if internal:
                 level, how, why = "low", "made by this app", "it only swaps the launcher"
-            item.setText(5, "HIGH" if level == "high" else "low")
+            item.setText(MOD_COL_RISK, "HIGH" if level == "high" else "low")
             if level == "high":
-                item.setForeground(5, QBrush(QColor(theme.c("problem"))))
+                item.setForeground(MOD_COL_RISK, QBrush(QColor(theme.c("problem"))))
+            if c["loses"]:
+                item.setForeground(MOD_COL_CONFLICTS, QBrush(QColor(theme.c("muted") if not c["wins"] else theme.c("text"))))
+            for col in (MOD_COL_SIZE, MOD_COL_FILES, MOD_COL_ORDER):
+                item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             item.setFlags((item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEditable)
                           & ~Qt.ItemFlag.ItemIsDropEnabled)
-            if mod.pinned:
-                item.setText(4, item.text(4) + ", pinned")
             newer = self._updates.get(mod.id)
             if newer is not None:
-                item.setText(1, "%s  → %s available" % (item.text(1), ("v" + newer.version) if newer.version else "newer file"))
-                item.setForeground(1, QBrush(QColor(theme.c("link"))))
+                item.setText(MOD_COL_FILE, "%s  → %s available" % (item.text(MOD_COL_FILE), ("v" + newer.version) if newer.version else "newer file"))
+                item.setForeground(MOD_COL_FILE, QBrush(QColor(theme.c("link"))))
             item.setCheckState(0, Qt.CheckState.Checked if mod.enabled else Qt.CheckState.Unchecked)
             item.setData(0, Qt.ItemDataRole.UserRole, mod.id)
             tip = self._mod_facts(mod)
+            tip.insert(0, "Goes into: %s. Priority position %d of %d." % (
+                "the game folder" if mod.target == "root" else "Data", position[mod.id], len(self.mgr.mods)))
+            if mod.category or mod.tags:
+                tip.insert(0, "Tags: %s" % ", ".join(([mod.category] if mod.category else []) + list(mod.tags)))
             if newer is not None:
                 tip.insert(0, "Update available: \"%s\"%s, uploaded %s. Select the mod and press Update." % (
                     newer.name, " version %s" % newer.version if newer.version else "", newer.uploaded or "?"))
@@ -1116,12 +1225,104 @@ class MainWindow(QMainWindow):
                 "HIGH" if level == "high" else "low", how, ": " + why if why else "",
                 "Add it on a new save; removing it can break saves made with it." if level == "high"
                 else "Adding or removing it barely changes a save."))
-            for col in range(6):
+            for col in range(MOD_COLUMNS):
                 item.setToolTip(col, "\n".join(tip))
             self.mod_tree.addTopLevelItem(item)
             if mod.id == current:
                 self.mod_tree.setCurrentItem(item)
         self._filling = False
+        if unmeasured:
+            self.mgr.save()                       # sizes were just worked out for the first time
+        free = self._reordering_allowed()
+        self.mod_tree.setDragDropMode(QTreeWidget.DragDropMode.InternalMove if free else QTreeWidget.DragDropMode.NoDragDrop)
+        shown, total = len(view), len(self.mgr.mods)
+        if free:
+            self.mod_hint.setText(("%d mods. Lower in the list wins. Drag to reorder." if self._compact else
+                                   "%d mods. When two contain the same file, the one lower in the list wins. Drag to reorder.") % total
+                                  if total else "No mods yet. Press \"Install mod\" or drop a mod's file on the window.")
+        else:
+            self.mod_hint.setText(("%d of %d, %s. Reordering is off." if self._compact else
+                                   "Showing %d of %d, %s. The # column is each mod's real position. Reordering is off in this view.")
+                                  % (shown, total, "sorted by %s" % self.mod_sort.currentText().lower()
+                                     if (self.mod_sort.currentData() or "priority") != "priority" else "filtered"))
+        self._fit_mod_columns()
+
+    def _fit_mod_columns(self) -> None:
+        """Show as many columns as fit. The name and the risk always stay; the rest drop out in a fixed order as the list narrows."""
+        width = self.mod_tree.viewport().width()
+        sorted_view = (self.mod_sort.currentData() or "priority") != "priority" or bool(self.mod_filter.text().strip())
+        wanted = [MOD_COL_RISK] + ([MOD_COL_ORDER] if sorted_view else []) + [MOD_COL_TAGS, MOD_COL_CONFLICTS, MOD_COL_SIZE,
+                                                                               MOD_COL_FILE, MOD_COL_FILES]
+        room = width - 170                           # what the name needs at the least
+        visible = set()
+        for col in wanted:
+            need = self.mod_tree.columnWidth(col) if not self.mod_tree.isColumnHidden(col) else self._mod_col_widths.get(col, 80)
+            if room - need >= 0 or col == MOD_COL_RISK:
+                visible.add(col)
+                room -= need
+        for col in range(1, MOD_COLUMNS):
+            hide = col not in visible
+            if hide and not self.mod_tree.isColumnHidden(col):
+                self._mod_col_widths[col] = self.mod_tree.columnWidth(col)
+            if hide != self.mod_tree.isColumnHidden(col):
+                self.mod_tree.setColumnHidden(col, hide)
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, "mod_tree", None) and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._fit_mod_columns)
+        return super().eventFilter(watched, event)
+
+    def set_tags(self) -> None:
+        mod = self.mgr.get(self._current_mod_id())
+        if mod is None:
+            return
+        text, ok = QInputDialog.getText(self, "Tags", "Your tags for \"%s\", separated by commas:%s" % (
+            mod.name, "\n(Its category, %s, is shown as well.)" % mod.category if mod.category else ""), text=", ".join(mod.tags))
+        if ok:
+            self.apply_tags(mod.id, text)
+
+    def apply_tags(self, mod_id: str, text: str) -> None:
+        mod = self.mgr.get(mod_id)
+        if mod is None:
+            return
+        tags = []
+        for t in text.split(","):
+            t = " ".join(t.split())[:40]
+            if t and t.lower() not in [x.lower() for x in tags]:
+                tags.append(t)
+        mod.tags = tags[:12]
+        self.mgr.save()
+        self._fill_mods()
+
+    def fill_categories(self, quiet: bool = False) -> None:
+        """Ask Nexus Mods for the category of each mod that came from there and has none recorded."""
+        nexus = self._nexus()
+        targets = [m for m in self.mgr.mods if m.origin.startswith("nexus:") and not m.category]
+        if not nexus.api_key or not targets:
+            if not quiet:
+                QMessageBox.information(self, "Categories", nexus.key_help if not nexus.api_key
+                                        else "Every mod from Nexus Mods already has its category.")
+            return
+
+        def one(m):
+            try:
+                return m, nexus.category_of(m.origin.split(":", 1)[1])
+            except prov.ProviderError:
+                return m, ""
+
+        def work():
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                return list(pool.map(one, targets))
+        found = 0
+        for m, category in run_busy(self, "Reading categories of %d mods from Nexus Mods…" % len(targets), work):
+            if category:
+                m.category = category
+                found += 1
+        self.mgr.settings["categories_asked"] = True
+        self.mgr.save()
+        self.say("Categories: filled in for %d of %d mods from Nexus Mods." % (found, len(targets)))
+        self._fill_mods()
 
     def _mod_facts(self, mod: Mod) -> list:
         """What tells this mod apart from others of the same name, as lines of text."""
@@ -1196,6 +1397,9 @@ class MainWindow(QMainWindow):
             self.apply(set(self.mgr.mod_plugins(mod)) if enabled else None)
 
     def move_mod(self, delta: int) -> None:
+        if not self._reordering_allowed():
+            self.say("Set Sort to \"Priority\" and clear the filter to reorder mods.")
+            return
         ids = [m.id for m in self.mgr.mods]
         cur = self._current_mod_id()
         if cur not in ids:
@@ -1345,6 +1549,10 @@ class MainWindow(QMainWindow):
             mod.enabled = entry["enabled"]
             if entry["risk"] and not mod.risk:
                 mod.risk = entry["risk"]
+            mod.category = mod.category or entry.get("category", "")
+            for t in entry.get("tags", []):
+                if t.lower() not in [x.lower() for x in mod.tags]:
+                    mod.tags.append(t)
             placed.append(mod)
         self.mgr.mods[:] = placed + [m for m in self.mgr.mods if m.id not in seen]
         self.mgr.save()
@@ -1371,6 +1579,9 @@ class MainWindow(QMainWindow):
     # -- ordering by drag, pins, counters --------------------------------------
 
     def _mods_dragged(self) -> None:
+        if not self._reordering_allowed():
+            self._fill_mods()
+            return
         ids = [self.mod_tree.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) for i in range(self.mod_tree.topLevelItemCount())]
         by_id = {m.id: m for m in self.mgr.mods}
         if sorted(ids) != sorted(by_id):              # a drop went somewhere odd: show the real order again
@@ -2020,6 +2231,24 @@ class MainWindow(QMainWindow):
             act = presence.activity("Managing mods", "Fallout 4, %d mods switched on" % mods)
         self.presence.show(act)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # A short window gives the lists the room: a three-line activity board and a smaller Vinny.
+        short = self.height() < 760
+        compact = self.width() < 1120
+        if compact != self._compact:
+            self._compact = compact
+            self.plugin_hint.setText("Load order. Lower loads later. Drag to reorder." if compact else PLUGIN_HINT)
+            self.mod_filter.setPlaceholderText("Filter" if compact else "Filter mods by name or tag")
+            self._fill_mods()
+        tiny = self.height() < 690
+        self.mod_hint.setVisible(not tiny)
+        self.plugin_hint.setVisible(not tiny)
+        self.log.setFixedHeight(48 if tiny else 64 if short else 112)
+        size = 60 if short else 92
+        if self.mascot.width() != size:
+            self.mascot.resize_to(size)
+
     def closeEvent(self, event):
         if self._in_loop > 0 and QMessageBox.question(
                 self, APP_NAME, "A job is still running. Quit anyway? An install in progress is abandoned."
@@ -2147,6 +2376,7 @@ class MainWindow(QMainWindow):
                         m.origin = "%s:%s" % (mod.provider, mod.id)
                         m.file_name, m.file_note, m.version, m.page = file.name, file.description, file.version, mod.url
                         m.file_id = str(file.id or "")
+                        m.category = mod.category or m.category
                         level, _how, why = self.mgr.risk(m)
                         if level == "high":
                             self.say("  \"%s\" is HIGH RISK (%s). Best added on a new save; removing it later can "

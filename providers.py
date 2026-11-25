@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import net
+from common import APP_NAME, APP_VERSION
 
 GAME_DOMAIN = "fallout4"
 NEXUS_GAME_ID = 1151
@@ -240,7 +241,7 @@ class NexusProvider(Provider):
     # -- plumbing -----------------------------------------------------------
 
     def _headers(self) -> dict:
-        h = {"Application-Name": "Mauser", "Application-Version": "0.8"}
+        h = {"Application-Name": APP_NAME, "Application-Version": APP_VERSION.split()[0]}
         if self.api_key:
             h["apikey"] = self.api_key
         return h
@@ -649,6 +650,16 @@ class NexusProvider(Provider):
             if uri.lower().startswith(("https://", "http://")):
                 return uri
         raise ProviderError("Nexus did not return a download address for this file.")
+
+    def category_of(self, mod_id: str) -> str:
+        """The site's category name for a mod ('' when it has none or cannot be read)."""
+        if self._categories is None:
+            try:
+                self.categories()
+            except ProviderError:
+                pass
+        m = self._v1("games/%s/mods/%s.json" % (GAME_DOMAIN, mod_id)) or {}
+        return self._category_name(m.get("category_id")) or ""
 
     def newer_file(self, mod_id: str, file_id: str) -> Optional[ModFile]:
         """The file that has replaced an installed one on the site, or None when it is still current

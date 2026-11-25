@@ -47,6 +47,9 @@ class Mod:
     page: str = ""                # address of the mod's page
     file_id: str = ""             # the site's id of the downloaded file
     risk: str = ""                # "high" or "low" when set by hand; "" = judged from the files
+    category: str = ""            # the site's category for the mod, e.g. "Weapons"
+    tags: list = field(default_factory=list)      # the user's own labels
+    size: int = 0                 # bytes on disk; 0 = not measured yet
     pinned: bool = False          # kept at the bottom of the list (wins conflicts) when mods are added
 
     def to_json(self) -> dict:
@@ -60,7 +63,9 @@ class Mod:
                    origin=str(d.get("origin", "")), file_name=str(d.get("file_name", "")),
                    file_note=str(d.get("file_note", "")), version=str(d.get("version", "")), page=str(d.get("page", "")),
                    file_id=str(d.get("file_id", "")), risk=d.get("risk") if d.get("risk") in ("high", "low") else "",
-                   pinned=bool(d.get("pinned", False)))
+                   pinned=bool(d.get("pinned", False)), category=str(d.get("category", "")),
+                   tags=[str(t)[:40] for t in d.get("tags", []) if str(t).strip()][:12] if isinstance(d.get("tags"), list) else [],
+                   size=int(d.get("size", 0) or 0))
 
 
 @dataclass
@@ -227,6 +232,20 @@ class Manager:
     def recount(self, mod: Mod) -> None:
         self.forget_files(mod.id)
         mod.files = len(self._walk(mod))
+        mod.size = 0
+        self.measure(mod)
+
+    def measure(self, mod: Mod) -> int:
+        """Bytes the mod takes on disk, worked out once and remembered."""
+        if mod.size <= 0 and mod.files:
+            total = 0
+            for path, _parts in self._walk(mod):
+                try:
+                    total += os.lstat(path).st_size
+                except OSError:
+                    pass
+            mod.size = max(total, 1)
+        return mod.size
 
     def remove_mod(self, mod_id: str) -> DeployReport:
         mod = self.get(mod_id)

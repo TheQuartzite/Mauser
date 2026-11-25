@@ -14,7 +14,7 @@ not work with my install. So I made my own. Mauser talks to the Steam copy of
 the game inside its Proton prefix directly, and it is one file you download
 and run.
 
-It is version 1.0 and it has been used on exactly one machine: mine (Bazzite,
+It is version 1.2.0 and it has been used on exactly one machine: mine (Bazzite,
 KDE, Wayland). It may well work on yours. If it does not, please open an issue
 and tell me what happened.
 
@@ -32,6 +32,11 @@ button takes it all out again.
 window shows which mod wins each file. Plugins that need something you do not
 have are marked, with a way to fix them. A counter keeps an eye on the
 plugin and archive limits.
+
+**Finding things in a long list.** Give mods your own tags, filter by name or
+tag, and sort by name, install date, size, file count or save risk. Sorting
+only changes the view; the real order stays as you set it. The window works
+down to 900 by 600.
 
 **Profiles and lists.** Keep separate setups that share one mod library, each
 with its own load order and game settings files. Save a setup to a small file
